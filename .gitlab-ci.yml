@@ -1,0 +1,42 @@
+variables:
+  GIT_SSL_NO_VERIFY: "true"
+
+stages:
+  - get-versioning
+  - build_push_docker
+
+versioning:
+  stage: get-versioning
+  image: ${DOCKER_REGISTRY}/chaos/git-semver:0.3.10
+  tags:
+    - docker
+  script:
+    - /entrypoint.sh ${CI_PROJECT_DIR} >> BUILD_VERSION
+    - cat BUILD_VERSION
+  artifacts:
+    paths: [BUILD_VERSION]
+
+build-docker:
+  stage: build_push_docker
+  tags:
+    - docker
+  image: docker:latest
+  before_script:
+    - |
+      for i in $(seq 1 30); do
+          if ! docker info &> /dev/null; then
+              echo "Docker not responding yet. Sleeping for 2s..." && sleep 2s
+          else
+              echo "Docker ready. Continuing build..."
+              break
+          fi
+      done
+
+  script:
+    - docker info
+    - docker build --network=host . -f docker/Dockerfile -t ${DOCKER_REGISTRY}/${CI_PROJECT_ROOT_NAMESPACE}/${CI_PROJECT_NAME}:$(cat BUILD_VERSION)
+    - docker tag ${DOCKER_REGISTRY}/${CI_PROJECT_ROOT_NAMESPACE}/${CI_PROJECT_NAME}:$(cat BUILD_VERSION) ${DOCKER_REGISTRY}/${CI_PROJECT_ROOT_NAMESPACE}/${CI_PROJECT_NAME}:latest
+
+  after_script:
+    - docker push ${DOCKER_REGISTRY}/${CI_PROJECT_ROOT_NAMESPACE}/${CI_PROJECT_NAME}:$(cat BUILD_VERSION)
+    - echo ${DOCKER_REGISTRY}/${CI_PROJECT_ROOT_NAMESPACE}/${CI_PROJECT_NAME}:$(cat BUILD_VERSION)
